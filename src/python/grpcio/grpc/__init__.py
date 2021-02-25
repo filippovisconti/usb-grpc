@@ -1393,6 +1393,20 @@ class Server(six.with_metaclass(abc.ABCMeta)):
         """
         raise NotImplementedError()
 
+   @abc.abstractmethod
+    def add_insecure_channel_from_usb(self, vid, pid):
+        """Opens an insecure channel USB for accepting RPCs.
+
+        This method may only be called AFTER starting the server.
+
+        Args:
+          vid: VID of USB device
+
+          pid: PID of USB device
+
+        """
+        raise NotImplementedError()
+
     @abc.abstractmethod
     def add_insecure_port(self, address):
         """Opens an insecure port for accepting RPCs.
@@ -1422,6 +1436,17 @@ class Server(six.with_metaclass(abc.ABCMeta)):
 
         Returns:
           An integer port on which server will accept RPC requests.
+        """
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def add_insecure_channel_from_fd(self, fd):
+        """Opens an insecure channel from fd for accepting RPCs.
+
+        This method may only be called after starting the server.
+
+        Args:
+          fd: File description number to listen
         """
         raise NotImplementedError()
 

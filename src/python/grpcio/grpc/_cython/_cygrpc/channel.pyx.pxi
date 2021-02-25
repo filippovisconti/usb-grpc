@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 
 _INTERNAL_CALL_ERROR_MESSAGE_FORMAT = (
     'Internal gRPC call error %d. ' +
@@ -444,6 +445,9 @@ cdef class Channel:
       self, bytes target, object arguments,
       ChannelCredentials channel_credentials):
     arguments = () if arguments is None else tuple(arguments)
+    cdef int c_vid = 0
+    cdef int c_pid = 0
+    cdef int c_fd = 0
     fork_handlers_and_grpc_init()
     self._state = _ChannelState()
     self._state.c_call_completion_queue = (
@@ -453,8 +457,20 @@ cdef class Channel:
     self._arguments = arguments
     cdef _ChannelArgs channel_args = _ChannelArgs(arguments)
     if channel_credentials is None:
-      self._state.c_channel = grpc_insecure_channel_create(
-          <char *>target, channel_args.c_args(), NULL)
+      if target.startswith("usb:"):
+          m = re.search('usb:(.+?):(.+?)$', target.decode('utf8'))
+          if m:
+            c_vid = int(m.group(1), 16)
+            c_pid = int(m.group(2), 16)
+            self._state.c_channel = grpc_insecure_channel_create_from_usb(<char *>target, c_vid, c_pid, c_arguments)
+      elif target.startswith("fd:"):
+          m = re.search('fd:(.+?)', target.decode('utf8'))
+          if m:
+            c_fd = int(m.group(1))
+            self._state.c_channel = grpc_insecure_channel_create_from_fd(<char *>target, c_fd, c_arguments)
+      else:
+        self._state.c_channel = grpc_insecure_channel_create(
+            <char *>target, channel_args.c_args(), NULL)
     else:
       c_channel_credentials = channel_credentials.c()
       self._state.c_channel = grpc_secure_channel_create(

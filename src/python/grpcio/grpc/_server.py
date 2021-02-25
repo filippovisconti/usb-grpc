@@ -789,6 +789,11 @@ def _add_generic_handlers(state, generic_handlers):
         state.generic_handlers.extend(generic_handlers)
 
 
+def _add_insecure_channel_from_usb(state, vid, pid):
+    with state.lock:
+        return state.server.add_channel_from_usb(vid, pid)
+
+
 def _add_insecure_port(state, address):
     with state.lock:
         return state.server.add_http2_port(address)
@@ -798,6 +803,11 @@ def _add_secure_port(state, address, server_credentials):
     with state.lock:
         return state.server.add_http2_port(address,
                                            server_credentials._credentials)
+
+
+def _add_insecure_channel_from_fd(state, fd):
+    with state.lock:
+        return state.server.add_channel_from_fd(fd)
 
 
 def _request_call(state):
@@ -957,9 +967,15 @@ class _Server(grpc.Server):
         _validate_generic_rpc_handlers(generic_rpc_handlers)
         _add_generic_handlers(self._state, generic_rpc_handlers)
 
+    def add_insecure_channel_from_usb(self, vid, pid):
+        return _add_insecure_channel_from_usb(self._state, vid, pid)
+
     def add_insecure_port(self, address):
         return _common.validate_port_binding_result(
             address, _add_insecure_port(self._state, _common.encode(address)))
+
+    def add_insecure_channel_from_fd(self, fd):
+        return _add_insecure_channel_from_fd(self._state, fd)
 
     def add_secure_port(self, address, server_credentials):
         return _common.validate_port_binding_result(
