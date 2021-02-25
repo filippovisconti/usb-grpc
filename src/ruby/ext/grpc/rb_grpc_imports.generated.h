@@ -29,6 +29,7 @@
 #include <grpc/grpc.h>
 #include <grpc/grpc_posix.h>
 #include <grpc/grpc_security.h>
+#include <grpc/grpc_usb.h>
 #include <grpc/impl/codegen/byte_buffer.h>
 #include <grpc/impl/codegen/log.h>
 #include <grpc/slice.h>
@@ -455,6 +456,12 @@ extern grpc_alts_credentials_create_type grpc_alts_credentials_create_import;
 typedef grpc_server_credentials*(*grpc_alts_server_credentials_create_type)(const grpc_alts_credentials_options* options);
 extern grpc_alts_server_credentials_create_type grpc_alts_server_credentials_create_import;
 #define grpc_alts_server_credentials_create grpc_alts_server_credentials_create_import
+typedef grpc_channel*(*grpc_insecure_channel_create_from_usb_type)(const char* target, int vid, int pid, const grpc_channel_args* args);
+extern grpc_insecure_channel_create_from_usb_type grpc_insecure_channel_create_from_usb_import;
+#define grpc_insecure_channel_create_from_usb grpc_insecure_channel_create_from_usb_import
+typedef int(*grpc_server_add_insecure_channel_from_usb_type)(grpc_server* server, void* reserved, int vid, int pid);
+extern grpc_server_add_insecure_channel_from_usb_type grpc_server_add_insecure_channel_from_usb_import;
+#define grpc_server_add_insecure_channel_from_usb grpc_server_add_insecure_channel_from_usb_import
 typedef grpc_channel_credentials*(*grpc_local_credentials_create_type)(grpc_local_connect_type type);
 extern grpc_local_credentials_create_type grpc_local_credentials_create_import;
 #define grpc_local_credentials_create grpc_local_credentials_create_import

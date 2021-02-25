@@ -24,6 +24,7 @@
 #include <grpc/grpc.h>
 #include <grpc/grpc_security.h>
 #include <grpc/grpc_security_constants.h>
+#include <grpc/grpc_usb.h>
 #include <grpc/impl/codegen/atm.h>
 #include <grpc/impl/codegen/byte_buffer.h>
 #include <grpc/impl/codegen/byte_buffer_reader.h>
@@ -204,6 +205,8 @@ int main(int argc, char **argv) {
   printf("%lx", (unsigned long) grpc_alts_credentials_options_destroy);
   printf("%lx", (unsigned long) grpc_alts_credentials_create);
   printf("%lx", (unsigned long) grpc_alts_server_credentials_create);
+  printf("%lx", (unsigned long) grpc_insecure_channel_create_from_usb);
+  printf("%lx", (unsigned long) grpc_server_add_insecure_channel_from_usb);
   printf("%lx", (unsigned long) grpc_local_credentials_create);
   printf("%lx", (unsigned long) grpc_local_server_credentials_create);
   printf("%lx", (unsigned long) grpc_tls_identity_pairs_create);

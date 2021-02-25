@@ -73,6 +73,18 @@ cdef class Server:
       # Ensure the core has gotten a chance to do the start-up work
       self.backup_shutdown_queue.poll(deadline=time.time())
 
+  def add_channel_from_usb(self, int vid, int pid):
+    self.references.append(vid)
+    self.references.append(pid)
+    cdef int c_vid = vid
+    cdef int c_pid = pid
+    cdef int result
+    with nogil:
+      result = grpc_server_add_insecure_channel_from_usb(self.c_server,
+                                                       NULL, c_vid, c_pid)
+
+    return result
+
   def add_http2_port(self, bytes address,
                      ServerCredentials server_credentials=None):
     address = str_to_bytes(address)
@@ -89,6 +101,14 @@ cdef class Server:
         result = grpc_server_add_insecure_http2_port(self.c_server,
                                                      address_c_string)
     return result
+
+  def add_channel_from_fd(self, int fd):
+    self.references.append(fd)
+    cdef int result
+    cdef int c_fd = fd
+    with nogil:
+      grpc_server_add_insecure_channel_from_fd(self.c_server, NULL,
+                                                           c_fd)
 
   cdef _c_shutdown(self, CompletionQueue queue, tag):
     self.is_shutting_down = True
