@@ -41,15 +41,14 @@ extern "C" {
 GRPCAPI grpc_channel* grpc_insecure_channel_create_from_usb(
         const char* target, int vid, int pid, const grpc_channel_args* args);
 
-/** Add the connected communication channel based on file descriptor 'fd' to the
-    'server'. The 'fd' must be an open file descriptor corresponding to a
-    connected socket. Events from the file descriptor may come on any of the
+/** Add the connected communication channel based on  using usb channel with vid and pid
+     to the 'server'. Events from the usb device may come on any of the
     server completion queues (i.e completion queues registered via the
     grpc_server_register_completion_queue API).
 
     The 'reserved' pointer MUST be NULL.
     */
-GRPCAPI int grpc_server_add_insecure_channel_from_usb(grpc_server* server,
+GRPCAPI grpc_channel* grpc_server_add_insecure_channel_from_usb(grpc_server* server,
         void* reserved, int vid, int pid);
 
 #ifdef __cplusplus

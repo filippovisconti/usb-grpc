@@ -477,6 +477,14 @@ cdef class Channel:
           c_channel_credentials, <char *>target, channel_args.c_args(), NULL)
       grpc_channel_credentials_release(c_channel_credentials)
 
+  def __cinit__(
+      self, _ChannelState channel_state):
+    self._state = channel_state
+    self._state.c_call_completion_queue = (
+        grpc_completion_queue_create_for_next(NULL))
+    self._state.c_connectivity_completion_queue = (
+        grpc_completion_queue_create_for_next(NULL))
+
   def target(self):
     cdef char *c_target
     with self._state.condition:

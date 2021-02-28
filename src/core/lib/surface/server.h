@@ -112,6 +112,8 @@ class Server : public InternallyRefCounted<Server> {
     config_fetcher_ = std::move(config_fetcher);
   }
 
+  std::vector<grpc_channel*> GetChannelsLocked() const;
+
   bool HasOpenConnections();
 
   // Adds a listener to the server.  When the server starts, it will call
@@ -191,6 +193,7 @@ class Server : public InternallyRefCounted<Server> {
     RefCountedPtr<Server> server() const { return server_; }
     grpc_channel* channel() const { return channel_; }
     size_t cq_idx() const { return cq_idx_; }
+    grpc_connectivity_state connectivity_state() const { return connectivity_state_; }
 
     ChannelRegisteredMethod* GetRegisteredMethod(const grpc_slice& host,
                                                  const grpc_slice& path,
@@ -213,6 +216,7 @@ class Server : public InternallyRefCounted<Server> {
 
     RefCountedPtr<Server> server_;
     grpc_channel* channel_;
+    grpc_connectivity_state connectivity_state_;
     // The index into Server::cqs_ of the CQ used as a starting point for
     // where to publish new incoming calls.
     size_t cq_idx_;
@@ -353,8 +357,6 @@ class Server : public InternallyRefCounted<Server> {
   grpc_call_error ValidateServerRequestAndCq(
       size_t* cq_idx, grpc_completion_queue* cq_for_notification, void* tag,
       grpc_byte_buffer** optional_payload, RegisteredMethod* rm);
-
-  std::vector<grpc_channel*> GetChannelsLocked() const;
 
   grpc_channel_args* const channel_args_;
   grpc_resource_user* default_resource_user_ = nullptr;

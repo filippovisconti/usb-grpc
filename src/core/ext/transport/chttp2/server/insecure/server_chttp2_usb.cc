@@ -33,8 +33,8 @@
 #include "src/core/lib/surface/completion_queue.h"
 #include "src/core/lib/surface/server.h"
 
-int grpc_server_add_insecure_channel_from_usb(grpc_server* server,
-                                              void* reserved, int vid, int pid) {
+grpc_channel* grpc_server_add_insecure_channel_from_usb(grpc_server* server,
+							void* reserved, int vid, int pid) {
   GPR_ASSERT(reserved == nullptr);
 
   grpc_channel* channel = NULL;
@@ -49,7 +49,7 @@ int grpc_server_add_insecure_channel_from_usb(grpc_server* server,
 
   if (!server_endpoint) {
     gpr_log(GPR_ERROR, "Cannot create USB channel: no endpoint");
-    return -1;
+    return NULL;
   }
 
   const grpc_channel_args* server_args = core_server->channel_args();
@@ -68,8 +68,8 @@ int grpc_server_add_insecure_channel_from_usb(grpc_server* server,
             grpc_error_string(error));
     GRPC_ERROR_UNREF(error);
     grpc_transport_destroy(transport);
-    return -1;
+    return NULL;
   }
   
-  return 0;
+  return core_server->GetChannelsLocked().front();
 }
