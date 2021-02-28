@@ -29,30 +29,32 @@
 #include "src/core/lib/iomgr/timer.h"
 #include "src/core/lib/surface/api_trace.h"
 #include "src/core/lib/surface/completion_queue.h"
+#include "src/core/lib/surface/server.h"
 
 grpc_connectivity_state grpc_channel_check_connectivity_state(
     grpc_channel* channel, int try_to_connect) {
   /* forward through to the underlying client channel */
-  grpc_channel_element* client_channel_elem =
-      grpc_channel_stack_last_element(grpc_channel_get_channel_stack(channel));
+  grpc_channel_element* channel_elem = NULL;
   grpc_core::ApplicationCallbackExecCtx callback_exec_ctx;
-  grpc_core::ExecCtx exec_ctx;
   grpc_connectivity_state state;
   GRPC_API_TRACE(
       "grpc_channel_check_connectivity_state(channel=%p, try_to_connect=%d)", 2,
       (channel, try_to_connect));
-  if (GPR_LIKELY(client_channel_elem->filter == &grpc_client_channel_filter)) {
-    state = grpc_client_channel_check_connectivity_state(client_channel_elem,
-                                                         try_to_connect);
 
-    return state;
+  if (grpc_channel_is_client(channel)) {
+      channel_elem = grpc_channel_stack_last_element(grpc_channel_get_channel_stack(channel));
+      if (GPR_LIKELY(channel_elem->filter == &grpc_client_channel_filter)) {
+          state = grpc_client_channel_check_connectivity_state(channel_elem,
+                                                               try_to_connect);
+      }
+      else {
+          state = GRPC_CHANNEL_SHUTDOWN;
+      }
+  } else {
+      // TODO FM: find a way to get connectivity_state of server object (no access to server object here)
+      state = GRPC_CHANNEL_READY;
   }
-  gpr_log(GPR_ERROR,
-          "grpc_channel_check_connectivity_state called on something that is "
-          "not a client channel, but '%s'",
-          client_channel_elem->filter->name);
-
-  return GRPC_CHANNEL_SHUTDOWN;
+  return state;
 }
 
 typedef enum {

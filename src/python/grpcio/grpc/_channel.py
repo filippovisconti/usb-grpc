@@ -1488,6 +1488,20 @@ class Channel(grpc.Channel):
             if pair[0] == grpc.experimental.ChannelOptions.SingleThreadedUnaryStream:
                 self._single_threaded_unary_stream = True
 
+    def __init__(self, c_channel):
+        """Constructor.
+
+        Args:
+          c_channel: The target to which to connect.
+        """
+        self._channel = cygrpc.Channel(c_channel)
+        self._call_state = _ChannelCallState(self._channel)
+        self._connectivity_state = _ChannelConnectivityState(self._channel)
+
+    def check_connectivity_state(self):
+        connectivity = self._channel.check_connectivity_state(False)
+        return _common.CYGRPC_CONNECTIVITY_STATE_TO_CHANNEL_CONNECTIVITY[connectivity]
+
     def subscribe(self, callback, try_to_connect=None):
         _subscribe(self._connectivity_state, callback, try_to_connect)
 

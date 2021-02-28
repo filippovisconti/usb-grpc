@@ -441,7 +441,7 @@ cdef extern from "grpc/grpc_usb.h":
   grpc_channel *grpc_insecure_channel_create_from_usb(
         const char *target, int vid, int pid, const grpc_channel_args *args) nogil
 
-  int grpc_server_add_insecure_channel_from_usb(grpc_server* server,
+  grpc_channel *grpc_server_add_insecure_channel_from_usb(grpc_server* server,
         void* reserved, int vid, int pid) nogil
 
 cdef extern from "grpc/grpc_security.h":

@@ -966,6 +966,7 @@ class Server::ChannelData::ConnectivityWatcher
   void OnConnectivityStateChange(grpc_connectivity_state new_state,
                                  const absl::Status& /*status*/) override {
     // Don't do anything until we are being shut down.
+    chand_->connectivity_state_ = new_state;
     if (new_state != GRPC_CHANNEL_SHUTDOWN) return;
     // Shut down channel.
     MutexLock lock(&chand_->server_->mu_global_);

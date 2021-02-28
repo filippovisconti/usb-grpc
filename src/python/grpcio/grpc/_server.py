@@ -23,6 +23,7 @@ from concurrent import futures
 import six
 
 import grpc
+from grpc import _channel
 from grpc import _common
 from grpc import _compression
 from grpc import _interceptor
@@ -791,7 +792,8 @@ def _add_generic_handlers(state, generic_handlers):
 
 def _add_insecure_channel_from_usb(state, vid, pid):
     with state.lock:
-        return state.server.add_channel_from_usb(vid, pid)
+        chan = state.server.add_channel_from_usb(vid, pid)
+        return _channel.Channel(chan)
 
 
 def _add_insecure_port(state, address):

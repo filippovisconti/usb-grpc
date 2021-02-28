@@ -80,12 +80,14 @@ cdef class Server:
     self.references.append(pid)
     cdef int c_vid = vid
     cdef int c_pid = pid
-    cdef int result
+    cdef grpc_channel *result
     with nogil:
       result = grpc_server_add_insecure_channel_from_usb(self.c_server,
                                                        NULL, c_vid, c_pid)
 
-    return result
+    _state = _ChannelState()
+    _state.c_channel = result
+    return _state
 
   def add_http2_port(self, bytes address,
                      ServerCredentials server_credentials=None):

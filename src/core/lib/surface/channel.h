@@ -102,7 +102,7 @@ struct CallRegistrationTable {
 }  // namespace grpc_core
 
 struct grpc_channel {
-  int is_client;
+  bool is_client;
   grpc_compression_options compression_options;
 
   gpr_atm call_size_estimate;
@@ -134,6 +134,11 @@ inline grpc_channel_stack* grpc_channel_get_channel_stack(
 inline grpc_core::channelz::ChannelNode* grpc_channel_get_channelz_node(
     grpc_channel* channel) {
   return channel->channelz_node.get();
+}
+
+inline bool grpc_channel_is_client(
+    grpc_channel* channel) {
+  return channel->is_client;
 }
 
 #ifndef NDEBUG
