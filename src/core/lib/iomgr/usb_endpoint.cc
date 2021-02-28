@@ -40,9 +40,9 @@
 #include "src/core/lib/iomgr/error.h"
 #include "src/core/lib/debug/stats.h"
 #include "src/core/lib/iomgr/ev_posix.h"
-#include "src/core/lib/iomgr/network_status_tracker.h"
 #include "src/core/lib/slice/slice_string_helpers.h"
 #include "src/core/lib/slice/slice_internal.h"
+#include "src/core/lib/iomgr/endpoint.h"
 
 typedef struct usb_endpoint {
   grpc_endpoint base;
@@ -88,6 +88,9 @@ typedef struct usb_endpoint {
   int endpoint_address_in_max_pkt_size;
 
   bool is_shutdown;
+
+  std::string peer_string;
+  std::string local_address;
 } usb_endpoint;
 
 typedef struct arg_event_usb {
@@ -148,7 +151,7 @@ void usb_free(usb_endpoint* usb) {
   gpr_log(GPR_INFO, "USB free");
 
   for (int i=0; i < usb->max_event_fd; i++){
-    grpc_fd_orphan(usb->event_fd[i], nullptr, nullptr , false, "usb_unref_orphan");
+    grpc_fd_orphan(usb->event_fd[i], nullptr, nullptr , "usb_unref_orphan");
   }
   grpc_slice_buffer_destroy_internal(&usb->last_read_buffer);
   grpc_resource_user_unref(usb->resource_user);
@@ -235,7 +238,7 @@ static void call_read_cb(usb_endpoint* usb, grpc_error* error) {
 
   usb->read_cb = nullptr;
   usb->incoming_buffer = nullptr;
-  GRPC_CLOSURE_SCHED(cb, error);
+  grpc_core::ExecCtx::Run(DEBUG_LOCATION, cb, error);
 }
 
 static void usb_continue_read(usb_endpoint* usb) {
@@ -255,8 +258,13 @@ static void usb_continue_read(usb_endpoint* usb) {
       gpr_log(GPR_INFO, "USB:%p alloc_slices", usb);
     }
 
-    grpc_resource_user_alloc_slices(&usb->slice_allocator, alloc_size, MAX_READ_SLICE_NB - usb->incoming_buffer->count,
-                                    usb->incoming_buffer);
+    if (GPR_UNLIKELY(!grpc_resource_user_alloc_slices(&usb->slice_allocator,
+						      alloc_size,
+						      MAX_READ_SLICE_NB - usb->incoming_buffer->count,
+						      usb->incoming_buffer))) {
+      // Wait for allocation.
+      return;
+    }
   } else {
     if (grpc_tcp_trace.enabled()) {
       gpr_log(GPR_INFO, "USB:%p do_read", usb);
@@ -317,12 +325,10 @@ static void notify_on_read(usb_endpoint* usb) {
   if (grpc_tcp_trace.enabled()) {
     gpr_log(GPR_INFO, "USB:%p notify_on_read", usb);
   }
-  GRPC_CLOSURE_INIT(&usb->read_done_closure, usb_handle_read, usb,
-                    grpc_schedule_on_exec_ctx);
 }
 
 static void usb_read(grpc_endpoint* ep, grpc_slice_buffer* incoming_buffer,
-                    grpc_closure* cb) {
+		     grpc_closure* cb, bool urgent) {
 
     usb_endpoint* usb = reinterpret_cast<usb_endpoint*>(ep);
     GPR_ASSERT(usb->read_cb == nullptr);
@@ -337,14 +343,16 @@ static void usb_read(grpc_endpoint* ep, grpc_slice_buffer* incoming_buffer,
        * the polling engine */
       usb->is_first_read = false;
       notify_on_read(usb);
-      GRPC_CLOSURE_SCHED(&usb->read_done_closure, GRPC_ERROR_NONE);
+      grpc_core::Closure::Run(DEBUG_LOCATION, &usb->read_done_closure,
+			      GRPC_ERROR_NONE);
     } else {
       /* Not the first time. We may or may not have more bytes available. In any
        * case call usb->read_done_closure (i.e usb_handle_read()) which does the
        * right thing (i.e calls usb_do_read() which either reads the available
        * bytes or calls notify_on_read() to be notified when new bytes become
        * available */
-      GRPC_CLOSURE_SCHED(&usb->read_done_closure, GRPC_ERROR_NONE);
+      grpc_core::Closure::Run(DEBUG_LOCATION, &usb->read_done_closure,
+			      GRPC_ERROR_NONE);
     }
 }
 
@@ -359,9 +367,6 @@ static void notify_on_write(usb_endpoint* usb) {
   if (grpc_tcp_trace.enabled()) {
     gpr_log(GPR_INFO, "USB:%p notify_on_write", usb);
   }
-  GRPC_CLOSURE_INIT(&usb->write_done_closure,
-                    usb_drop_uncovered_then_handle_write, usb,
-                    grpc_schedule_on_exec_ctx);
 }
 
 /* returns true if done, false if pending; if returning true, *error is set */
@@ -409,7 +414,7 @@ static bool usb_flush(usb_endpoint* usb, grpc_error** error) {
     gpr_log(GPR_INFO, "write DATA with iov size : %ld", iov_size);
     for (size_t i = 0; i < iov_size && r_usb == 0; i++) {
       sent_length_chunk = 0;
-      gpr_log(GPR_INFO, "write DATA with length : %ld on chunk %d", iov[i].iov_len, i);
+      gpr_log(GPR_INFO, "write DATA with length : %ld on chunk %ld", iov[i].iov_len, i);
       r_usb = libusb_bulk_transfer(usb->handle, usb->endpoint_address_out, (unsigned char*)iov[i].iov_base, (int)iov[i].iov_len, &sent_length_chunk, DEFAULT_TIMEOUT_BULK_USB_MS);
       sent_length += sent_length_chunk;
       gpr_log(GPR_INFO, "sent data : %d", sent_length_chunk);
@@ -485,13 +490,13 @@ void usb_handle_write(void* arg /* usb_endpoint */, grpc_error* error) {
       gpr_log(GPR_INFO, "write: %s", str);
     }
 
-    GRPC_CLOSURE_SCHED(cb, error);
+    grpc_core::Closure::Run(DEBUG_LOCATION, cb, error);
     USB_UNREF(usb, "write");
   }
 }
 
 static void usb_write(grpc_endpoint* ep, grpc_slice_buffer* slices,
-                     grpc_closure* cb) {
+		      grpc_closure* cb, void* arg) {
 
     usb_endpoint* usb = reinterpret_cast<usb_endpoint*>(ep);
     grpc_error* error = GRPC_ERROR_NONE;
@@ -514,11 +519,10 @@ static void usb_write(grpc_endpoint* ep, grpc_slice_buffer* slices,
          for (int i=0; i < usb->max_event_fd; i++) {
              fds_are_shutdown = fds_are_shutdown ? fds_are_shutdown : grpc_fd_is_shutdown(usb->event_fd[i]);
          }
-       GRPC_CLOSURE_SCHED(
-           cb, fds_are_shutdown
+	 grpc_core::Closure::Run(DEBUG_LOCATION, cb, fds_are_shutdown
                     ? GRPC_ERROR_CREATE_FROM_STATIC_STRING("EOF")
                     : GRPC_ERROR_NONE);
-       return;
+	 return;
      }
      usb->outgoing_buffer = slices;
      usb->outgoing_byte_idx = 0;
@@ -535,7 +539,7 @@ static void usb_write(grpc_endpoint* ep, grpc_slice_buffer* slices,
          const char* str = grpc_error_string(error);
          gpr_log(GPR_INFO, "write: %s", str);
        }
-       GRPC_CLOSURE_SCHED(cb, error);
+       grpc_core::Closure::Run(DEBUG_LOCATION, cb, error);
      }
 }
 
@@ -586,21 +590,42 @@ static void usb_shutdown(grpc_endpoint* ep, grpc_error* why) {
 static void usb_destroy(grpc_endpoint* ep) {
   gpr_log(GPR_INFO, "USB destroy endpoint");
 
-  grpc_network_status_unregister_endpoint(ep);
   usb_endpoint* usb = reinterpret_cast<usb_endpoint*>(ep);
   grpc_slice_buffer_reset_and_unref_internal(&usb->last_read_buffer);
   libusb_exit(usb->ctx);
+  if (grpc_event_engine_can_track_errors()) {
+    gpr_atm_no_barrier_store(&usb->shutdown_count, true);
+    for (int i=0; i < usb->max_event_fd; i++) {
+      grpc_fd_set_error(usb->event_fd[i]);
+    }
+  }
   USB_UNREF(usb, "destroy");
 }
 
-static char* usb_get_peer(grpc_endpoint* ep) {
-  return gpr_strdup("usb:endpoint");
+static absl::string_view usb_get_peer(grpc_endpoint* ep) {
+  usb_endpoint* usb = reinterpret_cast<usb_endpoint*>(ep);
+  return usb->peer_string;
+}
+
+static absl::string_view usb_get_local_address(grpc_endpoint* ep) {
+  usb_endpoint* usb = reinterpret_cast<usb_endpoint*>(ep);
+  return usb->local_address;
 }
 
 static grpc_resource_user* usb_get_resource_user(grpc_endpoint* ep) {
   usb_endpoint* usb = reinterpret_cast<usb_endpoint*>(ep);
   return usb->resource_user;
 }
+
+static bool usb_can_track_err(grpc_endpoint* ep) {
+  usb_endpoint* usb = reinterpret_cast<usb_endpoint*>(ep);
+  if (!grpc_event_engine_can_track_errors()) {
+    return false;
+  }
+  // TODO: what to do for checking if can track errors ?
+  return true;
+}
+
 
 size_t get_target_read_size(usb_endpoint* udp) {
   grpc_resource_quota* rq = grpc_resource_user_quota(udp->resource_user);
@@ -668,7 +693,9 @@ static const grpc_endpoint_vtable vtable = {
     usb_destroy,
     usb_get_resource_user,
     usb_get_peer,
+    usb_get_local_address,
     usb_get_fd,
+    usb_can_track_err,
 };
 
 static void usb_handle_event(void* arg /* usb_endpoint */, grpc_error* error) {
@@ -716,6 +743,8 @@ grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_
                                const char* peer_string) {
   usb_endpoint* usb = static_cast<usb_endpoint*>(gpr_malloc(sizeof(*usb)));
   usb->base.vtable = &vtable;
+  usb->peer_string = peer_string;
+  usb->local_address = "";
   char* name;
   int i = 0;
   gpr_asprintf(&name, "usb_endpoint_%" PRIxPTR, (intptr_t)usb);
@@ -817,7 +846,7 @@ grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_
   for (i = 0; list_fd[i] != NULL; i++){
       char* name;
       gpr_asprintf(&name, "usb-fd %d", list_fd[i]->fd);
-      grpc_fd* event_fd = grpc_fd_create(list_fd[i]->fd, name);
+      grpc_fd* event_fd = grpc_fd_create(list_fd[i]->fd, name, true);
       gpr_free(name);
       usb->event_fd[i] = event_fd;
       arg_event_usb* arg_event = static_cast<arg_event_usb*>(gpr_malloc(sizeof(*arg_event)));
@@ -834,8 +863,26 @@ grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_
       &usb->slice_allocator, usb->resource_user, usb_read_allocation_done, usb);
   gpr_free(name);
 
+#if 0 // TODO:
+  // This following block which exists in gRPC v1.13.0 is no more,
   /* Tell network status tracker about new endpoint */
   grpc_network_status_register_endpoint(&usb->base);
+
+  // should we replace it by something equivalent to what was found in tcp_posix.cc:
+
+  if (grpc_event_engine_can_track_errors()) {
+    /* Grab a ref to usb so that we can safely access the usb struct when
+     * processing errors. We unref when we no longer want to track errors
+     * separately. */
+    TCP_REF(tcp, "error-tracking");
+    gpr_atm_rel_store(&usb->stop_error_notification, 0);
+    GRPC_CLOSURE_INIT(&usb->error_closure, usb_handle_error, usb,
+                      grpc_schedule_on_exec_ctx);
+    grpc_fd_notify_on_error(usb->em_fd, &usb->error_closure);
+  }
+
+
+#endif
   grpc_resource_quota_unref_internal(resource_quota);
 
   usb->is_shutdown = false;
