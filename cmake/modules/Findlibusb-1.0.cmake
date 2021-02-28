@@ -1,0 +1,18 @@
+find_package(libusb-1.0 QUIET CONFIG)
+if(libusb-1.0_FOUND)
+  message(STATUS "Found libusb-1.0 via CMake.")
+  return()
+endif()
+
+find_package(PkgConfig REQUIRED)
+#pkg_check_modules(libusb-1.0 QUIET libusb-1.0)
+pkg_check_modules(LIBUSB libusb-1.0)
+if(LIBUSB_FOUND)
+  set(libusb-1.0_FOUND "${LIBUSB_FOUND}")
+  message(STATUS "Found libusb-1.0 via pkg-config.")
+  return()
+endif()
+
+if(libusb-1.0_FIND_REQUIRED)
+  message(FATAL_ERROR "Failed to find libusb-1.0.")
+endif()
