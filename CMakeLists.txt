@@ -81,11 +81,15 @@ set_property(CACHE gRPC_RE2_PROVIDER PROPERTY STRINGS "module" "package")
 set(gRPC_SSL_PROVIDER "module" CACHE STRING "Provider of ssl library")
 set_property(CACHE gRPC_SSL_PROVIDER PROPERTY STRINGS "module" "package")
 
+set(gRPC_LIBUSB_PROVIDER "" CACHE STRING "Provider of Libusb library")
+set_property(CACHE gRPC_LIBUSB_PROVIDER PROPERTY STRINGS "package")
+
 set(gRPC_PROTOBUF_PROVIDER "module" CACHE STRING "Provider of protobuf library")
 set_property(CACHE gRPC_PROTOBUF_PROVIDER PROPERTY STRINGS "module" "package")
 
 set(gRPC_PROTOBUF_PACKAGE_TYPE "" CACHE STRING "Algorithm for searching protobuf package")
 set_property(CACHE gRPC_PROTOBUF_PACKAGE_TYPE PROPERTY STRINGS "CONFIG" "MODULE")
+
 
 if(gRPC_BUILD_TESTS)
   set(gRPC_BENCHMARK_PROVIDER "module" CACHE STRING "Provider of benchmark library")
@@ -253,6 +257,7 @@ include(cmake/benchmark.cmake)
 include(cmake/cares.cmake)
 include(cmake/protobuf.cmake)
 include(cmake/re2.cmake)
+include(cmake/libusb.cmake)
 include(cmake/ssl.cmake)
 include(cmake/upb.cmake)
 include(cmake/zlib.cmake)
@@ -2018,6 +2023,7 @@ target_include_directories(grpc
     ${_gRPC_UPB_GENERATED_DIR}
     ${_gRPC_UPB_GRPC_GENERATED_DIR}
     ${_gRPC_UPB_INCLUDE_DIR}
+    ${_gRPC_LIBUSB_INCLUDE_DIR}
     ${_gRPC_ZLIB_INCLUDE_DIR}
 )
 target_link_libraries(grpc
@@ -2028,6 +2034,7 @@ target_link_libraries(grpc
   ${_gRPC_ADDRESS_SORTING_LIBRARIES}
   ${_gRPC_RE2_LIBRARIES}
   ${_gRPC_UPB_LIBRARIES}
+  ${_gRPC_LIBUSB_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
   gpr
   address_sorting
@@ -3897,12 +3904,14 @@ target_include_directories(gen_hpack_tables
     ${_gRPC_UPB_GENERATED_DIR}
     ${_gRPC_UPB_GRPC_GENERATED_DIR}
     ${_gRPC_UPB_INCLUDE_DIR}
+    ${_gRPC_LIBUSB_INCLUDE_DIR}
     ${_gRPC_ZLIB_INCLUDE_DIR}
     ${_gRPC_PROTO_GENS_DIR}
 )
 
 target_link_libraries(gen_hpack_tables
   ${_gRPC_PROTOBUF_LIBRARIES}
+  ${_gRPC_LIBUSB_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
   grpc
   gpr
