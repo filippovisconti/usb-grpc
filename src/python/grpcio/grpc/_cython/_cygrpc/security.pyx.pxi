@@ -28,7 +28,7 @@ cdef grpc_ssl_roots_override_result ssl_roots_override_callback(
     memcpy(
         pem_root_certs[0], <char *>temporary_pem_root_certs,
         len(temporary_pem_root_certs))
-    pem_root_certs[0][len(temporary_pem_root_certs)] = '\0'
+    pem_root_certs[0][len(temporary_pem_root_certs)] = '\0'.encode('UTF-8')
 
   return GRPC_SSL_ROOTS_OVERRIDE_OK
 
