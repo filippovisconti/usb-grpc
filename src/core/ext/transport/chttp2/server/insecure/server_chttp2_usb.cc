@@ -22,6 +22,8 @@
 #include <grpc/grpc_usb.h>
 #include <grpc/support/log.h>
 
+#include "absl/strings/str_cat.h"
+
 #include <grpc/support/alloc.h>
 #include <grpc/support/string_util.h>
 
@@ -37,15 +39,12 @@ grpc_channel* grpc_server_add_insecure_channel_from_usb(grpc_server* server,
 							void* reserved, int vid, int pid) {
   GPR_ASSERT(reserved == nullptr);
 
-  grpc_channel* channel = NULL;
   grpc_core::ExecCtx exec_ctx;
-  char* name;
   grpc_core::Server* core_server = server->core_server.get();
-  gpr_asprintf(&name, "server vid:%d, pid:%d", vid, pid);
+  std::string name = absl::StrCat("server vid:", vid, "pid:", pid);
 
   grpc_endpoint* server_endpoint = grpc_usb_client_create_from_vid_pid(vid,
-    pid, core_server->channel_args(), name);
-  gpr_free(name);
+	pid, core_server->channel_args(), name.c_str());
 
   if (!server_endpoint) {
     gpr_log(GPR_ERROR, "Cannot create USB channel: no endpoint");

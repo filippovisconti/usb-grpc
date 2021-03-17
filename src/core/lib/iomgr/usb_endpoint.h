@@ -19,7 +19,10 @@
 #ifndef USB_ENDPOINT_H
 #define USB_ENDPOINT_H
 
+#include "src/core/lib/debug/trace.h"
 #include "src/core/lib/iomgr/endpoint.h"
+
+extern grpc_core::TraceFlag grpc_usb_trace;
 
 grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_channel_args* args,
                                const char* peer_string);

@@ -35,6 +35,7 @@
 #include <grpc/support/string_util.h>
 
 #include "src/core/lib/channel/channel_args.h"
+#include "src/core/lib/debug/trace.h"
 #include "src/core/lib/gpr/string.h"
 #include "src/core/lib/gpr/useful.h"
 #include "src/core/lib/iomgr/error.h"
@@ -58,7 +59,7 @@ typedef struct usb_endpoint {
   bool is_first_read;
   double target_length;
   double bytes_read_this_round;
-  gpr_refcount refcount;
+  grpc_core::RefCount refcount;
   gpr_atm shutdown_count;
 
   int min_read_chunk_size;
@@ -107,44 +108,34 @@ static void usb_do_read(usb_endpoint* usb);
 static size_t get_target_read_size(usb_endpoint* udp);
 static void usb_free(usb_endpoint* usb);
 
-extern grpc_core::TraceFlag grpc_tcp_trace;
+extern grpc_core::TraceFlag grpc_usb_trace;
 
 #ifndef NDEBUG
-#define USB_UNREF(usb, reason) usb_unref((usb), (reason), __FILE__, __LINE__)
-#define USB_REF(usb, reason) usb_ref((usb), (reason), __FILE__, __LINE__)
-static void usb_unref(usb_endpoint* usb, const char* reason, const char* file,
-                      int line) {
-  if (grpc_tcp_trace.enabled()) {
-    gpr_atm val = gpr_atm_no_barrier_load(&usb->refcount.count);
-    gpr_log(file, line, GPR_LOG_SEVERITY_DEBUG,
-            "USB unref %p : %s %" PRIdPTR " -> %" PRIdPTR, usb, reason, val,
-            val - 1);
-  }
-  if (gpr_unref(&usb->refcount)) {
+#define USB_UNREF(usb, reason) usb_unref((usb), (reason), DEBUG_LOCATION)
+#define USB_REF(usb, reason) usb_ref((usb), (reason), DEBUG_LOCATION)
+static void usb_unref(usb_endpoint* usb, const char* reason,
+                      const grpc_core::DebugLocation& debug_location) {
+  if (GPR_UNLIKELY(usb->refcount.Unref(debug_location, reason))) {
     usb_free(usb);
   }
 }
 
-static void usb_ref(usb_endpoint* usb, const char* reason, const char* file,
-                    int line) {
-  if (grpc_tcp_trace.enabled()) {
-    gpr_atm val = gpr_atm_no_barrier_load(&usb->refcount.count);
-    gpr_log(file, line, GPR_LOG_SEVERITY_DEBUG,
-            "USB   ref %p : %s %" PRIdPTR " -> %" PRIdPTR, usb, reason, val,
-            val + 1);
+static void usb_ref(usb_endpoint* usb, const char* reason,
+                    const grpc_core::DebugLocation& debug_location) {
+  if (GPR_UNLIKELY(usb->refcount.Unref(debug_location, reason))) {
+    usb_free(usb);
   }
-  gpr_ref(&usb->refcount);
 }
 #else
 #define USB_UNREF(usb, reason) usb_unref((usb))
 #define USB_REF(usb, reason) usb_ref((usb))
 static void usb_unref(usb_endpoint* usb) {
-  if (gpr_unref(&usb->refcount)) {
+  if (GPR_UNLIKELY(usb->refcount.Unref())) {
     usb_free(usb);
   }
 }
 
-static void usb_ref(usb_endpoint* usb) { gpr_ref(&usb->refcount); }
+static void usb_ref(usb_endpoint* usb) { usb->refcount.Ref(); }
 #endif
 
 void usb_free(usb_endpoint* usb) {
@@ -187,7 +178,7 @@ void print_libusb_transfer(struct libusb_transfer *p_t)
 
 void print_slice_buffer(grpc_slice_buffer* incoming_buffer)
 {
-    if (!incoming_buffer || !grpc_tcp_trace.enabled()) {
+    if (!incoming_buffer || !GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
         return;
     }
 
@@ -220,7 +211,7 @@ static void usb_align_slice_buffer(grpc_slice_buffer* slice_buffer, size_t align
 static void call_read_cb(usb_endpoint* usb, grpc_error* error) {
   grpc_closure* cb = usb->read_cb;
 
-  if (grpc_tcp_trace.enabled()) {
+  if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
     gpr_log(GPR_INFO, "USB:%p call_cb %p %p:%p", usb, cb, cb->cb, cb->cb_arg);
     size_t i;
     const char* str = grpc_error_string(error);
@@ -254,7 +245,7 @@ static void usb_continue_read(usb_endpoint* usb) {
 
   if (usb->incoming_buffer->length < target_read_size &&
       usb->incoming_buffer->count < MAX_READ_SLICE_NB) {
-    if (grpc_tcp_trace.enabled()) {
+    if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
       gpr_log(GPR_INFO, "USB:%p alloc_slices", usb);
     }
 
@@ -266,7 +257,7 @@ static void usb_continue_read(usb_endpoint* usb) {
       return;
     }
   } else {
-    if (grpc_tcp_trace.enabled()) {
+    if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
       gpr_log(GPR_INFO, "USB:%p do_read", usb);
     }
     usb_do_read(usb);
@@ -274,8 +265,12 @@ static void usb_continue_read(usb_endpoint* usb) {
 }
 
 void trans_cb(struct libusb_transfer *transfer){
-    gpr_log(GPR_INFO, "transfer completed on USB !");
     usb_endpoint* usb = reinterpret_cast<usb_endpoint*>(transfer->user_data);
+    if (usb->incoming_buffer) {
+      gpr_log(GPR_INFO, "transfer completed on USB actual length = %lu (slice buffer length %lu)", transfer->actual_length, usb->incoming_buffer);
+    } else {
+      gpr_log(GPR_INFO, "transfer completed on USB actual length = %lu (slice buffer is NULL !!!!!)");
+    }
     print_libusb_transfer(transfer);
     print_slice_buffer(usb->incoming_buffer);
 
@@ -307,7 +302,7 @@ void trans_cb(struct libusb_transfer *transfer){
 
 static void usb_handle_read(void* arg /* usb_endpoint */, grpc_error* error) {
   usb_endpoint* usb = static_cast<usb_endpoint*>(arg);
-  if (grpc_tcp_trace.enabled()) {
+  if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
     gpr_log(GPR_INFO, "USB:%p got_read: %s", usb, grpc_error_string(error));
   }
 
@@ -322,7 +317,7 @@ static void usb_handle_read(void* arg /* usb_endpoint */, grpc_error* error) {
 }
 
 static void notify_on_read(usb_endpoint* usb) {
-  if (grpc_tcp_trace.enabled()) {
+  if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
     gpr_log(GPR_INFO, "USB:%p notify_on_read", usb);
   }
 }
@@ -339,6 +334,7 @@ static void usb_read(grpc_endpoint* ep, grpc_slice_buffer* incoming_buffer,
     USB_REF(usb, "read");
 
     if (usb->is_first_read) {
+
       /* Endpoint read called for the very first time. Register read callback with
        * the polling engine */
       usb->is_first_read = false;
@@ -357,14 +353,14 @@ static void usb_read(grpc_endpoint* ep, grpc_slice_buffer* incoming_buffer,
 }
 
 static void usb_drop_uncovered_then_handle_write(void* arg, grpc_error* error) {
-  if (grpc_tcp_trace.enabled()) {
+  if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
     gpr_log(GPR_INFO, "USB:%p got_write: %s", arg, grpc_error_string(error));
   }
   usb_handle_write(arg, error);
 }
 
 static void notify_on_write(usb_endpoint* usb) {
-  if (grpc_tcp_trace.enabled()) {
+  if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
     gpr_log(GPR_INFO, "USB:%p notify_on_write", usb);
   }
 }
@@ -478,14 +474,14 @@ void usb_handle_write(void* arg /* usb_endpoint */, grpc_error* error) {
   }
 
   if (!usb_flush(usb, &error)) {
-    if (grpc_tcp_trace.enabled()) {
+    if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
       gpr_log(GPR_INFO, "write: delayed");
     }
     notify_on_write(usb);
   } else {
     cb = usb->write_cb;
     usb->write_cb = nullptr;
-    if (grpc_tcp_trace.enabled()) {
+    if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
       const char* str = grpc_error_string(error);
       gpr_log(GPR_INFO, "write: %s", str);
     }
@@ -501,7 +497,7 @@ static void usb_write(grpc_endpoint* ep, grpc_slice_buffer* slices,
     usb_endpoint* usb = reinterpret_cast<usb_endpoint*>(ep);
     grpc_error* error = GRPC_ERROR_NONE;
 
-     if (grpc_tcp_trace.enabled()) {
+     if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
        size_t i;
 
        for (i = 0; i < slices->count; i++) {
@@ -530,12 +526,12 @@ static void usb_write(grpc_endpoint* ep, grpc_slice_buffer* slices,
      if (!usb_flush(usb, &error)) {
        USB_REF(usb, "write");
        usb->write_cb = cb;
-       if (grpc_tcp_trace.enabled()) {
+       if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
          gpr_log(GPR_INFO, "write: delayed");
        }
        notify_on_write(usb);
      } else {
-       if (grpc_tcp_trace.enabled()) {
+       if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
          const char* str = grpc_error_string(error);
          gpr_log(GPR_INFO, "write: %s", str);
        }
@@ -664,7 +660,7 @@ void usb_do_read(usb_endpoint* usb) {
 
 static void usb_read_allocation_done(void* usbp, grpc_error* error) {
   usb_endpoint* usb = static_cast<usb_endpoint*>(usbp);
-  if (grpc_tcp_trace.enabled()) {
+  if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
     gpr_log(GPR_INFO, "USB:%p read_allocation_done: %s", usb,
             grpc_error_string(error));
   }
@@ -701,7 +697,7 @@ static const grpc_endpoint_vtable vtable = {
 static void usb_handle_event(void* arg /* usb_endpoint */, grpc_error* error) {
   arg_event_usb* arg_event = static_cast<arg_event_usb*>(arg);
   usb_endpoint* usb = arg_event->usb;
-  if (grpc_tcp_trace.enabled()) {
+  if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
     gpr_log(GPR_INFO, "USB:%p got_event: %s", arg_event->usb, grpc_error_string(error));
   }
 
@@ -718,7 +714,7 @@ static void usb_handle_event(void* arg /* usb_endpoint */, grpc_error* error) {
 
 void notify_on_event(arg_event_usb* arg_event, grpc_fd* event_fd) {
   usb_endpoint* usb = arg_event->usb;
-  if (grpc_tcp_trace.enabled()) {
+  if (GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace)) {
     gpr_log(GPR_INFO, "USB:%p notify_on_event with fd %d", usb, grpc_fd_wrapped_fd(event_fd));
   }
   GRPC_CLOSURE_INIT(&usb->event_done_closure[arg_event->i], usb_handle_event, arg_event,
@@ -740,16 +736,14 @@ static int usb_get_max_packet_size(libusb_device_handle *handle, int endpoint_ad
 #define MAX_CHUNK_SIZE 32 * 1024 * 1024
 
 grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_channel_args* channel_args,
-                               const char* peer_string) {
-  usb_endpoint* usb = static_cast<usb_endpoint*>(gpr_malloc(sizeof(*usb)));
+                               const char* peer_string) 
+{
+  usb_endpoint* usb = new usb_endpoint();
   usb->base.vtable = &vtable;
   usb->peer_string = peer_string;
   usb->local_address = "";
-  char* name;
-  int i = 0;
-  gpr_asprintf(&name, "usb_endpoint_%" PRIxPTR, (intptr_t)usb);
 
-  grpc_tracer_set_enabled("tcp", 1);
+  grpc_tracer_set_enabled("usb", 1);
 
   gpr_log(GPR_INFO, "USB client create from VID PID");
 
@@ -797,7 +791,8 @@ grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_
   /* Will be set to false by the very first endpoint read function */
   usb->is_first_read = true;
   /* paired with unref in grpc_usb_destroy */
-  gpr_ref_init(&usb->refcount, 1);
+  new (&usb->refcount) grpc_core::RefCount(
+      1, GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace) ? "usb" : nullptr);
   gpr_atm_no_barrier_store(&usb->shutdown_count, 0);
 
   libusb_init(&usb->ctx);
@@ -843,13 +838,13 @@ grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_
 
   const struct libusb_pollfd** list_fd = libusb_get_pollfds(usb->ctx);
   usb->max_event_fd = 0;
-  for (i = 0; list_fd[i] != NULL; i++){
+  for (int i = 0; list_fd[i] != NULL; i++){
       char* name;
       gpr_asprintf(&name, "usb-fd %d", list_fd[i]->fd);
       grpc_fd* event_fd = grpc_fd_create(list_fd[i]->fd, name, true);
       gpr_free(name);
       usb->event_fd[i] = event_fd;
-      arg_event_usb* arg_event = static_cast<arg_event_usb*>(gpr_malloc(sizeof(*arg_event)));
+      arg_event_usb* arg_event = new arg_event_usb();
       USB_REF(usb, "event");
       arg_event->usb = usb;
       arg_event->i = i;
@@ -861,7 +856,6 @@ grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_
   usb->resource_user = grpc_resource_user_create(resource_quota, peer_string);
   grpc_resource_user_slice_allocator_init(
       &usb->slice_allocator, usb->resource_user, usb_read_allocation_done, usb);
-  gpr_free(name);
 
 #if 0 // TODO:
   // This following block which exists in gRPC v1.13.0 is no more,
@@ -884,7 +878,18 @@ grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_
 
 #endif
   grpc_resource_quota_unref_internal(resource_quota);
-
+  GRPC_CLOSURE_INIT(&usb->read_done_closure, usb_handle_read, usb,
+                    grpc_schedule_on_exec_ctx);
+  if (grpc_event_engine_run_in_background()) {
+    // If there is a polling engine always running in the background, there is
+    // no need to run the backup poller.
+    GRPC_CLOSURE_INIT(&usb->write_done_closure, usb_handle_write, usb,
+                      grpc_schedule_on_exec_ctx);
+  } else {
+    GRPC_CLOSURE_INIT(&usb->write_done_closure,
+                      usb_drop_uncovered_then_handle_write, usb,
+                      grpc_schedule_on_exec_ctx);
+  }
   usb->is_shutdown = false;
   return &usb->base;
 }
