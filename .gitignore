@@ -157,3 +157,7 @@ BenchmarkDotNet.Artifacts/
 
 # clang JSON compilation database file
 compile_commands.json
+
+.cache/
+
+CMakeFiles/
