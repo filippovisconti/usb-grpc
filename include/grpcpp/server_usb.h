@@ -16,19 +16,18 @@
  *
  */
 
-#include <grpcpp/server_posix.h>
+#ifndef GRPCPP_SERVER_USB_H
+#define GRPCPP_SERVER_USB_H
 
-#include <grpc/grpc_posix.h>
+#include <grpc/support/port_platform.h>
+#include <grpcpp/server.h>
+
+#include <memory>
 
 namespace grpc {
 
-#ifdef GPR_SUPPORT_CHANNELS_FROM_FD
-
-void AddInsecureChannelFromFd(grpc::Server* server, int fd) {
-  printf("Using channel with unix socket\n");
-  grpc_server_add_insecure_channel_from_fd(server->c_server(), nullptr, fd);
-}
-
-#endif  // GPR_SUPPORT_CHANNELS_FROM_FD
+int AddInsecureChannelFromUsb(grpc::Server* server, int vid, int pid);
 
 }  // namespace grpc
+
+#endif  // GRPCPP_SERVER_USB_H
