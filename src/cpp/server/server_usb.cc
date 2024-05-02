@@ -16,18 +16,14 @@
  *
  */
 
-#include <grpcpp/server_usb.h>
-
 #include <grpc/grpc_usb.h>
+#include <grpcpp/server_usb.h>
 
 namespace grpc {
 
-#ifdef GPR_SUPPORT_CHANNELS_FROM_FD
-
-int AddInsecureChannelFromUsb(grpc::Server* server, int vid, int pid) {
-  return grpc_server_add_insecure_channel_from_usb(server->c_server(), nullptr, vid, pid);
+void AddInsecureChannelFromUsb(grpc::Server* server, int vid, int pid) {
+  grpc_server_add_insecure_channel_from_usb(server->c_server(), nullptr, vid,
+                                            pid);
 }
-
-#endif  // GPR_SUPPORT_CHANNELS_FROM_FD
 
 }  // namespace grpc

@@ -26,7 +26,7 @@
 
 namespace grpc {
 
-int AddInsecureChannelFromUsb(grpc::Server* server, int vid, int pid);
+void AddInsecureChannelFromUsb(grpc::Server* server, int vid, int pid);
 
 }  // namespace grpc
 
