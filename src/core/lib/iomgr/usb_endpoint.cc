@@ -122,9 +122,7 @@ static void usb_unref(usb_endpoint* usb, const char* reason,
 
 static void usb_ref(usb_endpoint* usb, const char* reason,
                     const grpc_core::DebugLocation& debug_location) {
-  if (GPR_UNLIKELY(usb->refcount.Unref(debug_location, reason))) {
-    usb_free(usb);
-  }
+  usb->refcount.Ref();
 }
 #else
 #define USB_UNREF(usb, reason) usb_unref((usb))
@@ -795,7 +793,8 @@ grpc_endpoint* grpc_usb_client_create_from_vid_pid(int vid, int pid, const grpc_
       1, GRPC_TRACE_FLAG_ENABLED(grpc_usb_trace) ? "usb" : nullptr);
   gpr_atm_no_barrier_store(&usb->shutdown_count, 0);
 
-  libusb_init(&usb->ctx);
+  int init_res = libusb_init(&usb->ctx);
+  GPR_ASSERT(init_res == 0);
   usb->handle = libusb_open_device_with_vid_pid(usb->ctx, vid, pid);
   if (usb->handle == NULL){
       gpr_log(GPR_INFO, "cannot handling USB, end of USB endpoint");
