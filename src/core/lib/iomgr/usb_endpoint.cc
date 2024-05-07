@@ -122,7 +122,9 @@ static void usb_unref(usb_endpoint* usb, const char* reason,
 
 static void usb_ref(usb_endpoint* usb, const char* reason,
                     const grpc_core::DebugLocation& debug_location) {
+  gpr_log(GPR_INFO, "usb ref run");
   usb->refcount.Ref();
+  exit(1);
 }
 #else
 #define USB_UNREF(usb, reason) usb_unref((usb))
