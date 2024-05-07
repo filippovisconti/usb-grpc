@@ -41,6 +41,8 @@ grpc_channel* grpc_server_add_insecure_channel_from_usb(grpc_server* server,
 
   grpc_core::ExecCtx exec_ctx;
   grpc_core::Server* core_server = server->core_server.get();
+  GPR_ASSERT(core_server != nullptr);
+  std::cout << "got core_server" << std::endl;
   std::string name = absl::StrCat("server vid:", vid, "pid:", pid);
 
   grpc_endpoint* server_endpoint = grpc_usb_client_create_from_vid_pid(vid,
