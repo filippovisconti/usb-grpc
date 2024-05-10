@@ -37,7 +37,7 @@
 
 grpc_channel* grpc_server_add_insecure_channel_from_usb(grpc_server* server,
 							void* reserved, int vid, int pid) {
-  GPR_ASSERT(reserved == nullptr);
+  // GPR_ASSERT(reserved == nullptr);
 
   grpc_core::ExecCtx exec_ctx;
   grpc_core::Server* core_server = server->core_server.get();
@@ -71,6 +71,7 @@ grpc_channel* grpc_server_add_insecure_channel_from_usb(grpc_server* server,
     grpc_transport_destroy(transport);
     return NULL;
   }
-  
-  return core_server->GetChannelsLocked().front();
+  auto t1 = core_server->GetChannelsLocked();
+  auto t2 = t1.front();
+  return t2;
 }

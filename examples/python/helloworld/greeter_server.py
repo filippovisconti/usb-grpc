@@ -14,9 +14,9 @@
 """The Python implementation of the GRPC helloworld.Greeter server."""
 
 from concurrent import futures
-import logging
-
-import grpc
+import logging,sys 
+sys.path.insert(1, '/home/filippo/Developer/usb-grpc/src/python/grpcio/')
+import grpc 
 
 import helloworld_pb2
 import helloworld_pb2_grpc

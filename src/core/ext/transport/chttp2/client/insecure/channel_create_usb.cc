@@ -16,13 +16,11 @@
  *
  */
 
-#include <grpc/support/port_platform.h>
-
+#include <fcntl.h>
 #include <grpc/grpc.h>
 #include <grpc/grpc_usb.h>
 #include <grpc/support/log.h>
-
-#include <fcntl.h>
+#include <grpc/support/port_platform.h>
 
 #include "src/core/ext/transport/chttp2/transport/chttp2_transport.h"
 #include "src/core/lib/channel/channel_args.h"
@@ -44,11 +42,12 @@ grpc_channel* grpc_insecure_channel_create_from_usb(
   grpc_channel_args* final_args =
       grpc_channel_args_copy_and_add(args, &default_authority_arg, 1);
 
-  grpc_endpoint* client = grpc_usb_client_create_from_vid_pid(vid, pid, args, "usb-client");
-
+  grpc_endpoint* client =
+      grpc_usb_client_create_from_vid_pid(vid, pid, args, "usb-client");
+  GPR_ASSERT(client != nullptr);
   grpc_transport* transport =
       grpc_create_chttp2_transport(final_args, client, true);
-  GPR_ASSERT(transport);
+  GPR_ASSERT(transport != nullptr);
   grpc_channel* channel = grpc_channel_create(
       target, final_args, GRPC_CLIENT_DIRECT_CHANNEL, transport);
   grpc_channel_args_destroy(final_args);
